@@ -28,7 +28,7 @@ extern crate rocket_i18n;
 fn main() {
     rocket::ignite()
         // Make Rocket manage your translations.
-        .manage(rocket_i18n::i18n(vec![ "en", "fr", "de", "ja" ]));
+        .manage(rocket_i18n::i18n("your-domain", vec![ "en", "fr", "de", "ja" ]));
         // Register routes, etc
 }
 ```
@@ -84,4 +84,47 @@ msgid "You have one new notification" # The singular form
 msgid_plural "You have {{ count }} new notifications" # The plural one
 msgstr[0] ""
 msgstr[1] ""
+```
+
+### Using with Actix Web
+
+First, disable the default features so it doesn't pull in all of Rocket.
+```toml
+[dependencies.rocket_i18n]
+version = "0.2"
+default-features = false
+features = ["actix-web"]
+```
+
+Then add it to your application.
+```rust
+#[macro_use]
+extern crate rocket_i18n;
+
+use rocket_i18n::{I18n, Internationalized, Translations};
+
+fn route_handler(i18n: I18n) -> &str {
+    i18n!(i18n.catalog, "Hello, world!")
+}
+
+#[derive(Clone)]
+struct MyState {
+    translations: Translations,
+}
+
+impl Internationalized for MyState {
+    fn get(&self) -> Translations {
+        self.translations.clone()
+    }
+}
+
+fn main() {
+    let state = MyState {
+        translations: rocket_i18n::i18n("your-domain", vec![ "en", "fr", "de", "ja" ]);
+    };
+
+    App::with_state(state)
+        .resource("", |r| r.with(route_handler))
+        .finish();
+}
 ```

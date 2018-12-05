@@ -28,7 +28,7 @@
 //! fn main() {
 //!     rocket::ignite()
 //!         // Make Rocket manage your translations.
-//!         .manage(rocket_i18n::i18n(vec![ "en", "fr", "de", "ja" ]));
+//!         .manage(rocket_i18n::i18n("your-domain", vec![ "en", "fr", "de", "ja" ]));
 //!         // Register routes, etc
 //! }
 //! ```
@@ -87,16 +87,23 @@
 //! ```
 //!
 
+#[cfg(feature = "actix-web")]
+extern crate actix_web;
 extern crate gettext;
+#[cfg(feature = "rocket")]
 extern crate rocket;
 
 pub use gettext::*;
-use rocket::{
-    http::Status,
-    request::{self, FromRequest},
-    Outcome, Request, State,
-};
 use std::fs;
+
+#[cfg(feature = "rocket")]
+mod with_rocket;
+
+#[cfg(feature = "actix-web")]
+mod with_actix;
+
+#[cfg(feature = "actix-web")]
+pub use with_actix::Internationalized;
 
 const ACCEPT_LANG: &'static str = "Accept-Language";
 
@@ -105,53 +112,55 @@ pub struct I18n {
     pub catalog: Catalog,
 }
 
-type Translations = Vec<(&'static str, Catalog)>;
+pub type Translations = Vec<(&'static str, Catalog)>;
 
-pub fn i18n(lang: Vec<&'static str>) -> Translations {
+pub fn i18n(domain: &str, lang: Vec<&'static str>) -> Translations {
     lang.iter().fold(Vec::new(), |mut trans, l| {
-        let mo_file =
-            fs::File::open(format!("translations/{}.mo", l)).expect("Couldn't open catalog");
-        let cat = Catalog::parse(mo_file).expect("Error while loading catalog");
+        let mo_file = fs::File::open(format!("translations/{}/LC_MESSAGES/{}.mo", l, domain))
+            .expect("Couldn't open catalog");
+        let cat = Catalog::parse(mo_file).expect(format!("Error while loading catalog ({})", l).as_str());
         trans.push((l, cat));
         trans
     })
 }
 
-impl<'a, 'r> FromRequest<'a, 'r> for I18n{
-    type Error = ();
-
-    fn from_request(req: &'a Request) -> request::Outcome<I18n, ()> {
-        let langs = &*req
-            .guard::<State<Translations>>()
-            .expect("Couldn't retrieve translations because they are not managed by Rocket.");
-
-        let lang = req
-            .headers()
-            .get_one(ACCEPT_LANG)
-            .unwrap_or("en")
-            .split(",")
-            .filter_map(|lang| lang
-                // Get the locale, not the country code
-                .split(|c| c == '-' || c == ';')
-                .nth(0))
-            // Get the first requested locale we support
-            .find(|lang| langs.iter().any(|l| l.0 == &lang.to_string()))
-            .unwrap_or("en");
-
-        match langs.iter().find(|l| l.0 == lang) {
-            Some(catalog) => Outcome::Success(I18n {
-                catalog: catalog.1.clone(),
-            }),
-            None => Outcome::Failure((Status::InternalServerError, ())),
+/// Use this macro to staticaly import translations into your final binary. It's use is similar to
+/// [`i18n`](../rocket_i18n/fn.i18n.html)
+/// ```rust,ignore
+/// # //ignore because there is no translation file provided with rocket_i18n
+/// # #[macro_use]
+/// # extern crate rocket_i18n;
+/// # use rocket_i18n::Translations;
+/// let tr: Translations = include_i18n!("plume", ["de", "en", "fr"]);
+/// ```
+#[macro_export]
+macro_rules! include_i18n {
+    ( $domain:tt, [$($lang:tt),*] ) => {
+        {
+            use $crate::Catalog;
+            vec![
+            $(
+                (
+                    $lang,
+                    Catalog::parse(
+                        &include_bytes!(
+                            concat!(env!("CARGO_MANIFEST_DIR"), "/translations/", $lang, "/LC_MESSAGES/", $domain, ".mo")
+                            )[..]
+                        ).expect("Error while loading catalog")
+                )
+            ),*
+            ]
         }
     }
 }
 
 #[cfg(feature = "build")]
-pub fn update_po(domain: &str) {
+pub fn update_po(domain: &str, locales: &[&'static str]) {
+    use std::{path::Path, process::Command};
+
     let pot_path = Path::new("po").join(format!("{}.pot", domain));
 
-    for lang in get_locales() {
+    for lang in locales {
         let po_path = Path::new("po").join(format!("{}.po", lang.clone()));
         if po_path.exists() && po_path.is_file() {
             println!("Updating {}", lang.clone());
@@ -161,7 +170,11 @@ pub fn update_po(domain: &str) {
                 .arg(po_path.to_str().unwrap())
                 .arg(pot_path.to_str().unwrap())
                 .status()
-                .map(|s| if !s.success() { panic!("Couldn't update PO file") })
+                .map(|s| {
+                    if !s.success() {
+                        panic!("Couldn't update PO file")
+                    }
+                })
                 .expect("Couldn't update PO file");
         } else {
             println!("Creating {}", lang.clone());
@@ -173,7 +186,11 @@ pub fn update_po(domain: &str) {
                 .arg(lang)
                 .arg("--no-translator")
                 .status()
-                .map(|s| if !s.success() { panic!("Couldn't init PO file") })
+                .map(|s| {
+                    if !s.success() {
+                        panic!("Couldn't init PO file")
+                    }
+                })
                 .expect("Couldn't init PO file");
         }
     }
@@ -181,8 +198,10 @@ pub fn update_po(domain: &str) {
 
 /// Transforms all the .po files in the `po` directory of your project
 #[cfg(feature = "build")]
-fn compile_po() {
-    for lang in get_locales() {
+pub fn compile_po(domain: &str, locales: &[&'static str]) {
+    use std::{path::Path, process::Command};
+
+    for lang in locales {
         let po_path = Path::new("po").join(format!("{}.po", lang.clone()));
         let mo_dir = Path::new("translations")
             .join(lang.clone())
@@ -194,7 +213,11 @@ fn compile_po() {
             .arg(format!("--output-file={}", mo_path.to_str().unwrap()))
             .arg(po_path)
             .status()
-            .map(|s| if !s.success() { panic!("Couldn't compile translations") })
+            .map(|s| {
+                if !s.success() {
+                    panic!("Couldn't compile translations")
+                }
+            })
             .expect("Couldn't compile translations");
     }
 }
@@ -207,7 +230,7 @@ macro_rules! i18n {
         $cat.gettext($msg)
     };
     ($cat:expr, $msg:expr, $plur:expr, $count:expr) => {
-        $crate::try_format($cat.ngettext($msg, $plur, $count as u64), &[ Box::new($count) ])
+        $crate::try_format($cat.ngettext($msg, $plur, $count.clone() as u64), &[ Box::new($count) ])
             .expect("GetText formatting error")
     };
 
@@ -216,7 +239,7 @@ macro_rules! i18n {
             .expect("GetText formatting error")
     };
     ($cat:expr, $msg:expr, $plur:expr, $count:expr ; $( $args:expr ),*) => {
-        $crate::try_format($cat.ngettext($msg, $plur, $count as u64), &[ Box::new($count), $( Box::new($args) ),* ])
+        $crate::try_format($cat.ngettext($msg, $plu, $count.clone() as u64), &[ Box::new($count), $( Box::new($args) ),* ])
             .expect("GetText formatting error")
     };
 }
@@ -240,7 +263,10 @@ pub enum FormatError {
 }
 
 #[doc(hidden)]
-pub fn try_format(str_pattern: &str, argv: &[Box<std::fmt::Display>]) -> Result<String, FormatError> {
+pub fn try_format<'a>(
+    str_pattern: &'a str,
+    argv: &[Box<dyn std::fmt::Display + 'a>],
+) -> Result<String, FormatError> {
     use std::fmt::Write;
 
     //first we parse the pattern
@@ -265,7 +291,8 @@ pub fn try_format(str_pattern: &str, argv: &[Box<std::fmt::Display>]) -> Result<
                         .map_err(|_| FormatError::InvalidPositionalArgument)?
                 } else {
                     i
-                }).ok_or(FormatError::InvalidPositionalArgument)?,
+                })
+                .ok_or(FormatError::InvalidPositionalArgument)?,
             );
         } else {
             finish_or_fail = true;
