@@ -96,6 +96,9 @@ extern crate rocket;
 pub use gettext::*;
 use std::fs;
 
+#[cfg(feature = "build")]
+use std::{path::Path, process::Command};
+
 #[cfg(feature = "rocket")]
 mod with_rocket;
 
@@ -114,10 +117,10 @@ pub struct I18n {
 
 pub type Translations = Vec<(&'static str, Catalog)>;
 
-pub fn i18n(lang: Vec<&'static str>) -> Translations {
+pub fn i18n(domain: &str, lang: Vec<&'static str>) -> Translations {
     lang.iter().fold(Vec::new(), |mut trans, l| {
         let mo_file =
-            fs::File::open(format!("translations/{}.mo", l)).expect("Couldn't open catalog");
+            fs::File::open(format!("translations/{}/LC_MESSAGES/{}.mo", l, domain)).expect("Couldn't open catalog");
         let cat = Catalog::parse(mo_file).expect("Error while loading catalog");
         trans.push((l, cat));
         trans
@@ -125,10 +128,10 @@ pub fn i18n(lang: Vec<&'static str>) -> Translations {
 }
 
 #[cfg(feature = "build")]
-pub fn update_po(domain: &str) {
+pub fn update_po(domain: &str, locales: Vec<&str>) {
     let pot_path = Path::new("po").join(format!("{}.pot", domain));
 
-    for lang in get_locales() {
+    for lang in locales {
         let po_path = Path::new("po").join(format!("{}.po", lang.clone()));
         if po_path.exists() && po_path.is_file() {
             println!("Updating {}", lang.clone());
@@ -166,8 +169,8 @@ pub fn update_po(domain: &str) {
 
 /// Transforms all the .po files in the `po` directory of your project
 #[cfg(feature = "build")]
-fn compile_po() {
-    for lang in get_locales() {
+pub fn compile_po(domain: &str, locales: Vec<&str>) {
+    for lang in locales {
         let po_path = Path::new("po").join(format!("{}.po", lang.clone()));
         let mo_dir = Path::new("translations")
             .join(lang.clone())
