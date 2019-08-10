@@ -10,5 +10,5 @@ categories = ["internationalization", "localization", "web-programming"]
 version = "0.5.0"
 
 [dependencies]
-gettext = "0.3"
-actix-web = "1.0.0-beta.3"
+gettext = { git = "https://github.com/Plume-org/gettext/", rev = "294c54d74c699fbc66502b480a37cc66c1daa7f3" }
+actix-web = "1.0"
