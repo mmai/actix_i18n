@@ -4,11 +4,13 @@ description = "Actix Web extractor for easy internationalization with gettext"
 license = "GPL-3.0"
 name = "actix_i18n"
 readme = "README.md"
-repository = "https://github.com/aardwolf-social/rocket_i18n"
+repository = "https://github.com/mmai/actix_i18n"
 keywords = ["i18n", "actix", "gettext", "internationalization", "localization"]
 categories = ["internationalization", "localization", "web-programming"]
-version = "0.5.0"
+version = "0.6.0"
+edition = "2018"
 
 [dependencies]
 gettext = { git = "https://github.com/Plume-org/gettext/", rev = "294c54d74c699fbc66502b480a37cc66c1daa7f3" }
-actix-web = "1.0"
+actix-web = "2.0.0-alpha.3"
+futures = "0.3.1"

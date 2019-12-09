@@ -10,7 +10,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! actix_i18n = "0.4"
+//! actix_i18n = "0.6"
 //! gettext-macros = "0.1" # Provides proc-macros to manage translations
 //! ```
 //!
