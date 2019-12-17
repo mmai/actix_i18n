@@ -1,7 +1,7 @@
 use std::{error::Error, fmt};
 //
 use std::pin::Pin;
-use futures::future::Future;
+use futures::future::{Ready, Future, ok, err};
 
 use crate::{I18n, Translations, ACCEPT_LANG};
 
@@ -49,24 +49,24 @@ impl ResponseError for MissingStateError {
 impl FromRequest for I18n {
     type Config = ();
     type Error = actix_web::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self, Self::Error>>>>;
+    // type Future = Pin<Box<dyn Future<Output = Result<Self, Self::Error>>>>;
+    type Future = Ready<Result<Self, Self::Error>>;
 
-    fn from_request<'request>(req: &'request HttpRequest, _: &mut Payload) -> Self::Future {
-
-        // let accept_lang = "en"; 
-        let accept_lang = req
-            .headers()
-            .get(ACCEPT_LANG)
-        //     // .await
-            .unwrap_or(&HeaderValue::from_static("en"))
-            .to_str().ok()
-            .unwrap_or("en");
+    fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
         let langs = req.app_data::<Translations>().ok_or(MissingStateError);
         let langs = match langs {
                 Ok(langs) => langs.clone(),
-                e => return Box::pin(async {Err(MissingStateError.into())})
+                e => return err(MissingStateError.into())
         };
-        let lang = accept_lang.split(",")
+
+        let defaultLangHeader = HeaderValue::from_static("en");
+        let lang = req
+            .headers()
+            .get(ACCEPT_LANG)
+            .unwrap_or(&defaultLangHeader)
+            .to_str() 
+            .unwrap_or("en") 
+            .split(",")
             .filter_map(|lang| {
                 lang
                     // Get the locale, not the country code
@@ -75,19 +75,15 @@ impl FromRequest for I18n {
             })
             // Get the first requested locale we support
             .find(|lang| langs.iter().any(|l| l.0 == &lang.to_string()))
-                .unwrap_or("en");
+            .unwrap_or("en");
 
-        Box::pin( async move {
-
-            match langs.iter().find(|l| l.0 == lang) {
-                Some(translation) => Ok(I18n {
-                    catalog: translation.1.clone(),
-                    lang: translation.0,
-                }),
-                None => Err(MissingTranslationsError(lang.to_owned()).into()),
-            }
+        match langs.iter().find(|l| l.0 == lang) {
+            Some(translation) => ok(I18n {
+                catalog: translation.1.clone(),
+                lang: translation.0,
+            }),
+            None => err(MissingTranslationsError(lang.to_owned()).into()),
         }
-        )
     }
 
 }
