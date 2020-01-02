@@ -1,7 +1,5 @@
 use std::{error::Error, fmt};
-//
-use std::pin::Pin;
-use futures::future::{Ready, Future, ok, err};
+use futures::future::{Ready, ok, err};
 
 use crate::{I18n, Translations, ACCEPT_LANG};
 
@@ -53,17 +51,17 @@ impl FromRequest for I18n {
     type Future = Ready<Result<Self, Self::Error>>;
 
     fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
-        let langs = req.app_data::<Translations>().ok_or(MissingStateError);
+        let langs = req.app_data::<Translations>();
         let langs = match langs {
-                Ok(langs) => langs.clone(),
-                e => return err(MissingStateError.into())
+                Some(langs) => langs.clone(),
+                _e => return err(MissingStateError.into())
         };
 
-        let defaultLangHeader = HeaderValue::from_static("en");
+        let default_lang_header = HeaderValue::from_static("en");
         let lang = req
             .headers()
             .get(ACCEPT_LANG)
-            .unwrap_or(&defaultLangHeader)
+            .unwrap_or(&default_lang_header)
             .to_str() 
             .unwrap_or("en") 
             .split(",")
