@@ -21,8 +21,8 @@ in
 nightlyRustPlatform.buildRustPackage rec {
 # stdenv.mkDerivation rec {
   pname = "actix_i18n";
-  version = "0.6.0";
-  cargoSha256 = "1kbd76z3kfyqmkc2170n2lpbfnam9gn2fcz69mqxdsgqzw50pmsi";
+  version = "0.6.1";
+  cargoSha256 = "0p8m9xqb2rwffrn3aqwjhm19fx6q8kx4c6f4f96ilixr783f5m7d";
   src = ./.;
 
   # buildPhase = ''
